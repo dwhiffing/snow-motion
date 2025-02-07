@@ -114,7 +114,9 @@ export class Game extends Scene {
     const { width } = this.cameras.main
     if (this.slopeBag.length < 10) {
       this.slopeBag = this.slopeBag.concat(
-        Phaser.Math.RND.shuffle([1, 1, 1, 1, 1, -1, -1, -1]),
+        Phaser.Math.RND.shuffle([
+          1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, -0.5, -0.75, -1,
+        ]),
       )
     }
     while (this.hillCoords.x < this.cameras.main.scrollX + width) {

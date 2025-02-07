@@ -6,6 +6,20 @@ const scale = 10
 const gravity = 20
 const initialX = 150 / scale
 const initialY = 350 / scale
+const gameSpeed = 1
+const angularDamping = 0.215
+const linearDamping = 0.108
+const maxBallSize = 2000
+const sizeFactor = 220
+const slopeDistribution = [1, 1, 1, 1, -1, -1]
+const slopeSize = [800, 1200]
+const slopeStrength = [0.7, 1.5]
+const initialSlopeStrength = 10
+const initialSlopeLength = 3000
+const baseGravity = 5
+const ballGrowRate = 0.015
+const ballShrinkRate = 2
+const scoreFactor = 0.1
 
 type Vector = { x: number; y: number }
 interface IShape extends Shape {
@@ -18,105 +32,208 @@ export class Game extends Scene {
   ground: Body
   ball: Body
   hillCoords: Vector
+  hasLost: boolean
   graphics: Phaser.GameObjects.Graphics
+  circle: Phaser.GameObjects.Arc
+  gravityFactor: number
+  contactPoint: Vector | undefined
   slopeBag: number[]
-  ballRolling: boolean
   score: number
   scoreText: Phaser.GameObjects.Text
-  i: number
-  i2: number
+  slopeY: number
+  ballSize: number
+  snowParticles: Phaser.GameObjects.Particles.ParticleEmitter
+  rollParticles: Phaser.GameObjects.Particles.ParticleEmitter
+  deathParticles: Phaser.GameObjects.Particles.ParticleEmitter
 
   constructor() {
     super('Game')
   }
 
   create() {
+    this.circle = this.add
+      .circle(
+        this.cameras.main.width / 2,
+        this.cameras.main.height / 2,
+        this.cameras.main.width,
+        0x028af8,
+      )
+      .setScrollFactor(0)
+      .setDepth(10)
+    this.tweens.add({
+      targets: this.circle,
+      scale: 0,
+      duration: 1000,
+      ease: 'Quad.easeInOut',
+    })
+
     this.world = new World({ x: 0, y: gravity })
 
-    this.i = 0
-    this.i2 = 0
-    this.ballRolling = false
+    this.slopeY = 0
+    this.ballSize = 400
     this.ground = this.world.createBody()
     this.hillCoords = { x: 0, y: 0 } as Vector
     this.graphics = this.add.graphics()
     this.slopeBag = []
+    this.gravityFactor = 1
+    this.hasLost = false
 
     this.ball = this.world.createBody({
-      angularDamping: 0.18,
-      linearDamping: 0.1,
+      angularDamping,
+      linearDamping,
       position: { x: initialX, y: initialY },
     })
     this.ball.setDynamic()
 
-    this.world.on('begin-contact', () => {
-      this.ballRolling = true
+    this.world.on('begin-contact', (contact) => {
+      this.contactPoint = contact.getWorldManifold(null)!.points[0]
     })
 
     this.world.on('end-contact', () => {
-      this.ballRolling = false
-    })
-
-    this.input.keyboard!.on('keydown', (a: any) => {
-      if (a.which === 32) {
-        if (this.i2 > 10) {
-          this.world.setGravity({ x: 0, y: gravity * 3 })
-          this.i2 -= 8
-        }
-      } else if (a.which === 82) {
-        this.scene.start('Game')
-      }
-    })
-
-    this.input.keyboard!.on('keyup', () => {
-      this.world.setGravity({ x: 0, y: gravity })
+      this.contactPoint = undefined
     })
 
     this.generateTerrain()
 
     this.scoreText = this.add
-      .text(10, this.cameras.main.height - 10, '0', {
+      .text(10, this.cameras.main.height + 5, '0', {
         color: '#028af8',
-        fontSize: 28,
+        fontSize: 42,
+        fontFamily: 'rolling-beat',
       })
+      .setPadding(10)
       .setOrigin(0, 1)
+      .setDepth(9)
       .setScrollFactor(0)
     this.score = 0
+
+    this.make
+      .graphics({ x: 0, y: 0 })
+      .fillStyle(0xffffff, 1)
+      .fillCircle(10, 10, 5)
+      .generateTexture('snow', 20, 20)
+      .destroy()
+
+    this.snowParticles = this.add.particles(0, 0, 'snow').start()
+    this.rollParticles = this.add.particles(0, 0, 'snow')
+    this.deathParticles = this.add.particles(0, 0, 'snow', {
+      lifespan: 4000,
+      speed: { min: 150, max: 450 },
+      scale: { min: 0.5, max: 1.5 },
+      gravityY: 350,
+      emitting: false,
+    })
   }
 
   update(_t: number, dt: number) {
-    this.world.step((dt / 1000) * 1.5)
+    this.world.step((dt / 1000) * gameSpeed)
     this.world.clearForces()
+    const baseSpeed = this.ball.getLinearVelocity().x
 
     let pos = this.ball.getPosition()
-    this.cameras.main.setScroll(pos.x * scale - 150, pos.y * scale - 300)
-
-    if (this.ballRolling && this.i2 < 2000) {
-      this.i2 += this.ball.getLinearVelocity().x / 20
+    if (!this.hasLost) {
+      this.cameras.main.setScroll(
+        pos.x * scale - 150,
+        pos.y * scale - this.cameras.main.height / 2,
+      )
     }
 
-    const fixture = this.ball.getFixtureList()
+    if (this.input.activePointer.isDown) {
+      this.gravityFactor = 3
+      this.ballSize -= ballShrinkRate
+
+      if (this.ballSize <= 0.1 && !this.hasLost) {
+        this.ballSize = 0.1
+        const pos = this.ball.getPosition()
+        this.deathParticles.explode(100, pos.x * scale, pos.y * scale)
+        this.onLose()
+      }
+    } else {
+      this.gravityFactor = 1
+    }
+
+    if (!this.hasLost)
+      this.snowParticles.setConfig({
+        x: {
+          min: this.ball.getPosition().x * scale,
+          max: (this.ball.getPosition().x + 880) * scale,
+        },
+        y: {
+          min: (this.ball.getPosition().y - 30) * scale,
+          max: (this.ball.getPosition().y - 90) * scale,
+        },
+        lifespan: 6000,
+        speedY: { min: 100, max: 200 },
+        speedX: { min: -100, max: 100 },
+        scale: { min: 0.2, max: 0.8 },
+        quantity: 5,
+        gravityY: 150,
+      })
+
+    if (this.contactPoint && !this.hasLost) {
+      const { x, y } = this.contactPoint
+      const s = Phaser.Math.Clamp(baseSpeed / 40, 0, 10)
+      this.rollParticles.setConfig({
+        speedX: { onEmit: () => Phaser.Math.RND.between(100, 250) * s },
+        speedY: { onEmit: () => Phaser.Math.RND.between(-130, -10) * s },
+        lifespan: 500,
+        gravityY: 100,
+        scale: { max: s / 4, min: 0 },
+      })
+
+      this.rollParticles.emitParticle(1, x * scale, y * scale)
+      if (this.ballSize < maxBallSize && this.gravityFactor === 1)
+        this.ballSize += Math.abs(baseSpeed * ballGrowRate)
+    }
+
+    let fixture = this.ball.getFixtureList()
     if (fixture) this.ball.destroyFixture(fixture)
 
-    this.ball.createFixture(new Circle(1 + this.i2 / 220), { density: 100 })
-    this.ball.setMassData({ mass: 2, center: { x: 0, y: 0 }, I: 1 })
+    fixture = this.ball.createFixture(new Circle(this.ballSize / sizeFactor), {
+      density: 1,
+      friction: 1,
+    })
+    const shape = fixture.getShape() as IShape
+    this.ball.setGravityScale(
+      (baseGravity + shape.m_radius / 2) * this.gravityFactor,
+    )
 
-    this.debugDraw()
+    this.draw()
     this.generateTerrain()
 
-    const scoreX = this.ball.getPosition().x - initialX
-    if (scoreX > this.score) {
+    const scoreX = (this.ball.getPosition().x - initialX) * scoreFactor
+    if (scoreX > this.score && !this.hasLost) {
       this.score = Math.round(scoreX)
       this.scoreText.setText(`${this.score}`)
     }
+
+    if (baseSpeed < -1) {
+      this.onLose()
+    }
+  }
+
+  onLose = () => {
+    if (this.hasLost) return
+
+    this.hasLost = true
+    this.time.delayedCall(2000, () => {
+      this.tweens.add({
+        targets: this.circle,
+        scale: 1,
+        duration: 1000,
+        ease: 'Sine.easeInOut',
+        onComplete: () => {
+          this.scene.start('Menu', { score: this.score })
+        },
+      })
+    })
   }
 
   generateTerrain() {
     const { width } = this.cameras.main
-    if (this.slopeBag.length < 10) {
+    if (this.slopeBag.length < slopeDistribution.length * 2) {
       this.slopeBag = this.slopeBag.concat(
-        Phaser.Math.RND.shuffle([
-          1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, -0.5, -0.75, -1,
-        ]),
+        Phaser.Math.RND.shuffle(slopeDistribution),
       )
     }
     while (this.hillCoords.x < this.cameras.main.scrollX + width) {
@@ -129,19 +246,19 @@ export class Game extends Scene {
     let slopePoints = []
 
     let m = 1
-    let m2 = Phaser.Math.RND.realInRange(0.5, 0.7)
-    let length = Phaser.Math.Between(400, 700)
-    if (this.hillCoords.x < 1100) {
-      m = 1
-      m2 = Phaser.Math.RND.realInRange(0.8, 1.5)
+    let m2 = Phaser.Math.RND.realInRange(slopeStrength[0], slopeStrength[1])
+    let length = Phaser.Math.Between(slopeSize[0], slopeSize[1])
+    if (this.hillCoords.x < 100) {
+      m2 = initialSlopeStrength
+      length = initialSlopeLength
     } else {
       m = this.slopeBag.shift()!
     }
-    this.i += m2 * m
+    this.slopeY += m2 * m
 
     for (let x = 0; x <= length; x++) {
       const delta = x / length
-      const val = interpolate(this.hillCoords.y, this.i, delta)
+      const val = interpolate(this.hillCoords.y, this.slopeY, delta)
       const y = height * 0.5 + val * amp
       slopePoints.push({ x, y })
     }
@@ -159,10 +276,10 @@ export class Game extends Scene {
     }
 
     this.hillCoords.x += length - 1
-    this.hillCoords.y = this.i
+    this.hillCoords.y = this.slopeY
   }
 
-  debugDraw() {
+  draw() {
     this.graphics.clear()
     let edges = 0
     for (let body = this.world.getBodyList(); body; body = body.getNext()) {
@@ -179,14 +296,14 @@ export class Game extends Scene {
             let v1 = shape.m_vertex1
             let v2 = shape.m_vertex2
 
-            if (v2.x * scale < this.cameras.main.scrollX - 1200) {
+            if (v2.x * scale < this.cameras.main.scrollX - 2400) {
               body.destroyFixture(fixture)
             } else {
               this.graphics.beginPath()
               this.graphics.moveTo(v1.x * scale, v1.y * scale)
               this.graphics.lineTo(v2.x * scale, v2.y * scale)
-              this.graphics.lineTo(v2.x * scale, (v2.y + 80) * scale)
-              this.graphics.lineTo(v1.x * scale, (v1.y + 80) * scale)
+              this.graphics.lineTo(v2.x * scale, (v2.y + 120) * scale)
+              this.graphics.lineTo(v1.x * scale, (v1.y + 120) * scale)
 
               this.graphics.fill()
             }
@@ -194,20 +311,24 @@ export class Game extends Scene {
           }
           case 'circle': {
             let position = body.getPosition()
-            let angle = body.getAngle()
+            // let angle = body.getAngle()
             this.graphics.fillStyle(0xffffff)
             const px = position.x * scale
             const py = position.y * scale
-            const r = (shape.m_radius + 0.1) * scale
+            const r = (shape.m_radius + 0.5) * scale
+
+            // this.graphics.lineStyle(2, 0xffffff)
+            // this.graphics.strokeCircle(px, py, r)
             this.graphics.lineStyle(2, 0x028af8)
             this.graphics.fillCircle(px, py, r)
-            this.graphics.beginPath()
-            this.graphics.moveTo(px, py)
-            this.graphics.lineTo(
-              px + r * Math.cos(angle),
-              py + r * Math.sin(angle),
-            )
-            this.graphics.strokePath()
+
+            // this.graphics.beginPath()
+            // this.graphics.moveTo(px, py)
+            // this.graphics.lineTo(
+            //   px + r * Math.cos(angle),
+            //   py + r * Math.sin(angle),
+            // )
+            // this.graphics.strokePath()
             break
           }
         }

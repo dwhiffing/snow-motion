@@ -1,7 +1,6 @@
 import { Scene } from 'phaser'
 
 export class Menu extends Scene {
-  scoreText: Phaser.GameObjects.Text
   score: number
   constructor() {
     super('Menu')
@@ -34,6 +33,12 @@ export class Menu extends Scene {
             duration: 1000,
             ease: 'Quad.easeInOut',
             onComplete: () => {
+              if (
+                !this.sys.game.device.os.desktop &&
+                !this.scale.isFullscreen
+              ) {
+                this.scale.startFullscreen()
+              }
               this.scene.start('Game')
             },
           })
@@ -47,19 +52,27 @@ export class Menu extends Scene {
         families: ['rolling-beat'],
       },
       active: () => {
-        this.scoreText = this.add
+        this.add
           .text(
             this.cameras.main.width / 2,
             this.cameras.main.height / 2,
-            'Click to start',
-            { color: '#028af8', fontSize: 82, fontFamily: 'rolling-beat' },
+            this.score > 0 ? `${this.score}` : 'Snow Motion',
+            { color: '#028af8', fontSize: 140, fontFamily: 'rolling-beat' },
           )
           .setOrigin(0.5, 0.5)
           .setAlign('center')
           .setPadding(30)
-        if (this.score > 0) {
-          this.scoreText.setText(`${this.score}\nClick to try again`)
-        }
+
+        this.add
+          .text(
+            this.cameras.main.width / 2,
+            this.cameras.main.height / 2 + 120,
+            this.score > 0 ? 'Click to try again' : 'Click to start',
+            { color: '#028af8', fontSize: 64, fontFamily: 'rolling-beat' },
+          )
+          .setOrigin(0.5, 0.5)
+          .setAlign('center')
+          .setPadding(30)
       },
     })
   }

@@ -1,19 +1,20 @@
 {
-    "name": "snow-game",
+    "name": "snow-motion",
     "description": "A Phaser 3 TypeScript template using Vite.",
     "version": "1.3.2",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/dwhiffing/snow-game.git"
+        "url": "git+https://github.com/dwhiffing/snow-motion.git"
     },
     "author": "dwhiffing",
-    "homepage": "https://dwhiffing.github.io/snow-game",
+    "homepage": "https://dwhiffing.github.io/snow-motion",
     "scripts": {
         "dev": "vite --config vite/config.dev.mjs",
         "build": "vite build --config vite/config.prod.mjs",
         "deploy": "gh-pages -d dist"
     },
     "devDependencies": {
+        "gh-pages": "^6.3.0",
         "terser": "^5.31.0",
         "typescript": "^5.4.5",
         "vite": "^5.3.1"

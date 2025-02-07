@@ -15,7 +15,7 @@ body {
 
 @font-face {
   font-family: 'rolling-beat';
-  src: url('/assets/rolling-beat.ttf');
+  src: url('./assets/rolling-beat.ttf');
   font-weight: 400;
   font-weight: normal;
 }

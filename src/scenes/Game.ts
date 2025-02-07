@@ -4,12 +4,13 @@ import simplify from 'simplify-js'
 
 const scale = 10
 const gravity = 20
-const initialX = 150 / scale
+const initialX = 200 / scale
 const initialY = 350 / scale
 const gameSpeed = 1
 const angularDamping = 0.215
 const linearDamping = 0.108
 const maxBallSize = 2000
+const minBallSize = 50
 const sizeFactor = 220
 const slopeDistribution = [1, 1, 1, 1, -1, -1]
 const slopeSize = [800, 1200]
@@ -117,9 +118,9 @@ export class Game extends Scene {
     this.snowParticles = this.add.particles(0, 0, 'snow').start()
     this.rollParticles = this.add.particles(0, 0, 'snow')
     this.deathParticles = this.add.particles(0, 0, 'snow', {
-      lifespan: 4000,
-      speed: { min: 150, max: 450 },
-      scale: { min: 0.5, max: 1.5 },
+      lifespan: 8000,
+      speed: { min: 150, max: 650 },
+      scale: { min: 0.5, max: 2 },
       gravityY: 350,
       emitting: false,
     })
@@ -133,7 +134,7 @@ export class Game extends Scene {
     let pos = this.ball.getPosition()
     if (!this.hasLost) {
       this.cameras.main.setScroll(
-        pos.x * scale - 150,
+        pos.x * scale - 200,
         pos.y * scale - this.cameras.main.height / 2,
       )
     }
@@ -142,10 +143,10 @@ export class Game extends Scene {
       this.gravityFactor = 3
       this.ballSize -= ballShrinkRate
 
-      if (this.ballSize <= 0.1 && !this.hasLost) {
-        this.ballSize = 0.1
+      if (this.ballSize <= minBallSize && !this.hasLost) {
+        this.ballSize = minBallSize
         const pos = this.ball.getPosition()
-        this.deathParticles.explode(100, pos.x * scale, pos.y * scale)
+        this.deathParticles.explode(200, pos.x * scale, pos.y * scale)
         this.onLose()
       }
     } else {
@@ -173,15 +174,20 @@ export class Game extends Scene {
     if (this.contactPoint && !this.hasLost) {
       const { x, y } = this.contactPoint
       const s = Phaser.Math.Clamp(baseSpeed / 40, 0, 10)
+      const s2 = Phaser.Math.Clamp(baseSpeed / 60, 0, 1)
       this.rollParticles.setConfig({
         speedX: { onEmit: () => Phaser.Math.RND.between(100, 250) * s },
         speedY: { onEmit: () => Phaser.Math.RND.between(-130, -10) * s },
         lifespan: 500,
         gravityY: 100,
-        scale: { max: s / 4, min: 0 },
+        scale: { max: s2, min: 0 },
       })
 
-      this.rollParticles.emitParticle(1, x * scale, y * scale)
+      this.rollParticles.emitParticle(
+        this.gravityFactor === 1 ? 1 : 3,
+        x * scale,
+        y * scale,
+      )
       if (this.ballSize < maxBallSize && this.gravityFactor === 1)
         this.ballSize += Math.abs(baseSpeed * ballGrowRate)
     }
@@ -246,13 +252,20 @@ export class Game extends Scene {
     let slopePoints = []
 
     let m = 1
-    let m2 = Phaser.Math.RND.realInRange(slopeStrength[0], slopeStrength[1])
-    let length = Phaser.Math.Between(slopeSize[0], slopeSize[1])
+    let m2 = 1
+    let length = 1
     if (this.hillCoords.x < 100) {
       m2 = initialSlopeStrength
       length = initialSlopeLength
     } else {
       m = this.slopeBag.shift()!
+
+      m2 = Phaser.Math.RND.realInRange(slopeStrength[0], slopeStrength[1])
+      length = Phaser.Math.Between(slopeSize[0], slopeSize[1])
+      if (m < 0) {
+        m2 *= 0.95
+        length *= 0.95
+      }
     }
     this.slopeY += m2 * m
 
@@ -310,6 +323,7 @@ export class Game extends Scene {
             break
           }
           case 'circle': {
+            if (this.ballSize <= minBallSize) continue
             let position = body.getPosition()
             // let angle = body.getAngle()
             this.graphics.fillStyle(0xffffff)
